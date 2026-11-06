@@ -6,6 +6,8 @@
 ################################################
 
 
+library(data.table)
+
 # -------------------- Loading SRA ---------------------
 
 # test on one isolated accession
@@ -53,18 +55,18 @@ message("Deleting original fastq file...")
 system(paste("rm",uncleaned_fastq_file)) 
 
 # random sampling of sequence-lines
-n = 1e7 # num lines to sample
+n = 1e6 # num lines to sample
 sampled_fastq_file <- file.path(accession_dir,
                                 paste0(accession_id,"_sample",
                                        gsub("\\+0", "", 
                                             format(n, scientific = TRUE)),
                                        ".txt"))
 
-lines <- read.delim(cleaned_fastq_file,header=FALSE)
+lines <- fread(cleaned_fastq_file, header = FALSE)[[1]]
 sampled_lines <- sample(lines,n)
 
 writeLines(sampled_lines, sampled_fastq_file)
-
+# 3.25GB --> 1.51 GB
 
 
 
