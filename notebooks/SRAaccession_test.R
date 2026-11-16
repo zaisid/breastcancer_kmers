@@ -7,6 +7,7 @@
 
 
 library(data.table)
+library(Biostrings)
 
 # -------------------- Loading SRA ---------------------
 
@@ -36,6 +37,9 @@ message("Deleting reverse read file...")
 system(paste("rm",file.path(accession_dir,
                             list.files(accession_dir,pattern="_2\\.fastq$")))) 
 
+
+# -------------------- Cleaning SRA ---------------------
+
 # clean dumped FASTQ
 uncleaned_fastq_file <- file.path(accession_dir, 
                                  list.files(accession_dir,
@@ -64,17 +68,67 @@ sampled_fastq_file <- file.path(accession_dir,
 
 lines <- fread(cleaned_fastq_file, header = FALSE)[[1]]
 sampled_lines <- sample(lines,n)
+rm(lines) 
 
 writeLines(sampled_lines, sampled_fastq_file)
 # 3.25GB --> 1.51 GB
 
 
+# -------------------- K-merizing ---------------------
 
+k <- 2
+chunk_size <- 50000  # lighten memory load
 
+# Initialize aggregate counts
+kmer_sums <- numeric(4^k)
+names(kmer_sums) <- oligonucleotideFrequency(
+    DNAString("ACGT"),
+    width = k
+) |> names()
 
+# Open sampled sequence file
+con <- file(sampled_fastq_file, open = "r")
 
+chunk_num <- 0
 
+repeat {
+    # Read next chunk
+    seq_chunk <- readLines(con, n = chunk_size)
+    
+    # Stop when file is exhausted
+    if (length(seq_chunk) == 0) break
+    
+    chunk_num <- chunk_num + 1
+    
+    # Convert to DNA sequences
+    dna_chunk <- DNAStringSet(seq_chunk)
+    
+    # Aggregate k-mer counts across chunk
+    chunk_counts <- oligonucleotideFrequency(
+        dna_chunk,
+        width = k,
+        simplify.as = "collapsed"
+    )
+    
+    # Accumulate counts
+    kmer_sums[names(chunk_counts)] <-
+        kmer_sums[names(chunk_counts)] + chunk_counts
+    
+    # Progress indicator
+    if (chunk_num %% 10 == 0) {
+        message("Processed ", chunk_num * chunk_size,
+                " sequences")
+    }
+    
+    rm(seq_chunk, dna_chunk, chunk_counts)
+}
 
+close(con)
+
+# Normalize into frequencies 
+kmer_freq <- kmer_sums / sum(kmer_sums)
+
+kmer_freq
 
 
 
