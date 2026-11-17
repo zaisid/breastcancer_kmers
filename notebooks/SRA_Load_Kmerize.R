@@ -35,8 +35,8 @@ load_SRA <- function(sra_id,data_dir,verbose=TRUE) {
         message("Downloading SRA file...")}
     system(paste("prefetch", sra_id,"-O",data_dir))
 
-    accession_id  <- list.files(data_dir) # ID that's being used to label the download
-    accession_dir <- file.path(data_dir,accession_id)
+    #accession_id  <- list.files(data_dir) # ID that's being used to label the download
+    accession_dir <- file.path(data_dir,sra_id)
     
     # .sra file
     fetched_file <- file.path(accession_dir,list.files(accession_dir))
@@ -57,7 +57,7 @@ load_SRA <- function(sra_id,data_dir,verbose=TRUE) {
     
     cat("File",accession_id,"downloaded")
     
-    return(c(accession_id,accession_dir))
+    return(accession_dir)
 }
 
 
@@ -104,15 +104,15 @@ sample_SRA <- function(accession_id,
     # sampled_fastq_file = (character) path of sampled .txt lines from SRA
     
     # random sampling of sequence-lines
-    n = 1e6 # num lines to sample
     sampled_fastq_file <- file.path(accession_dir,
                                     paste0(accession_id,"_sample",
                                            gsub("\\+0", "", 
-                                                format(n, scientific = TRUE)),
+                                                format(sample_size, 
+                                                       scientific = TRUE)),
                                            ".txt"))
     
     lines <- fread(cleaned_fastq_file, header = FALSE)[[1]] 
-    sampled_lines <- sample(lines,n) 
+    sampled_lines <- sample(lines,sample_size) 
     rm(lines) 
     
     writeLines(sampled_lines, sampled_fastq_file)
@@ -179,33 +179,81 @@ kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
     # Normalize into frequencies 
     kmer_freq <- kmer_sums / sum(kmer_sums)
     
-    return(c(kmer_freq,kmer_sums))
+    return(list(
+        kmer_freq = kmer_freq,
+        kmer_sums = kmer_sums
+    ))
 }
 
 
-load_and_kmerize <- function(sra_id,data_dir,verbose=TRUE,
-                             sample_size=1e6,k=2,chunk_size=50000,
-                             sums=FALSE) {
+
+load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
+                             sample_size = 1e6, k = 2,
+                             chunk_size = 50000, sums = FALSE) {
     # full pipeline, from SRA ID to kmer vector
     # outputs kmer_freq vector (also kmer_sums if sum is set to TRUE; default FALSE)
     
-    if (verbose) {
-        message("Downloading file:",sra_id)
+    # Helper for consistent error handling
+    handle_error <- function(stage, error) {
+        message("[ERROR] ", sra_id, " | ", stage, ": ",
+                conditionMessage(error))
+        return(NULL)
     }
-    accessions <- load_SRA(sra_id,data_dir,verbose)
-    accession_id  <- accessions[[1]]
-    accession_dir <- accessions[[2]]
     
+    # -------------------- Downloading ---------------------
     
-    cleaned_fastq_file <- clean_SRA(accession_id,accession_dir,verbose)
-    sampled_fastq_file <- sample_SRA(accession_id,accession_dir,
-                                     cleaned_fastq_file,sample_size)
+    if (verbose) {
+        message("Downloading file: ", sra_id)}
+    
+    accession_dir <- tryCatch(
+        load_SRA(sra_id, data_dir, verbose),
+        error = function(e) handle_error("SRA download", e))
+    
+    if (is.null(accession_dir)) return(NULL)
+    
+    # -------------------- Cleaning ---------------------
+    
+    if (verbose) {
+        message("Cleaning FASTQ data...")}
+    
+    cleaned_fastq_file <- tryCatch(
+        clean_SRA(sra_id, accession_dir, verbose),
+        error = function(e) handle_error("SRA cleaning", e)
+    )
+    
+    if (is.null(cleaned_fastq_file)) return(NULL)
+    
+    # -------------------- Sampling ---------------------
+    
+    if (verbose) {
+        message("Sampling ", format(sample_size, scientific = TRUE),
+                " sequences... ")}
+    
+    sampled_fastq_file <- tryCatch(
+        sample_SRA(sra_id, accession_dir,
+                   cleaned_fastq_file, sample_size),
+        error = function(e) handle_error("SRA sampling", e))
+    
+    if (is.null(sampled_fastq_file)) return(NULL)
+    
+    # -------------------- K-merizing ---------------------
+    
+    if (verbose) {
+        message("K-merizing...")}
+    
+    kmer_results <- tryCatch(
+        kmerize_SRA(sampled_fastq_file, k, chunk_size, verbose),
+        error = function(e) handle_error("K-merization", e))
+    
+    if (is.null(kmer_results)) return(NULL)
+    
+    # -------------------- Output ---------------------
     
     if (sums) {
-        return(kmerize_SRA(sampled_fastq_file,k,chunk_size,verbose))}
-    return(kmerize_SRA(sampled_fastq_file,k,chunk_size,verbose)[[1]])
+        return(kmer_results)}
+    
+    return(kmer_results$kmer_freq)
 }
-
 
 load_and_kmerize(test_id,data_dir)
 
