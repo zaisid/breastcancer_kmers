@@ -37,6 +37,9 @@ message("Deleting reverse read file...")
 system(paste("rm",file.path(accession_dir,
                             list.files(accession_dir,pattern="_2\\.fastq$")))) 
 
+message("Deleting SRA file...") # double check if ok to delete atp
+system(paste("rm",fetched_file)) 
+
 
 # -------------------- Cleaning SRA ---------------------
 
@@ -76,7 +79,7 @@ writeLines(sampled_lines, sampled_fastq_file)
 
 # -------------------- K-merizing ---------------------
 
-k <- 2
+k <- 2  # can be tuned
 chunk_size <- 50000  # lighten memory load
 
 # Initialize aggregate counts
@@ -129,6 +132,4 @@ close(con)
 kmer_freq <- kmer_sums / sum(kmer_sums)
 
 kmer_freq
-
-
 
