@@ -55,7 +55,7 @@ load_SRA <- function(sra_id,data_dir,verbose=TRUE) {
         message("Deleting SRA file...")} 
     system(paste("rm",fetched_file)) 
     
-    cat("File",accession_id,"downloaded")
+    cat("File",sra_id,"downloaded")
     
     return(accession_dir)
 }
@@ -84,7 +84,7 @@ clean_SRA <- function(accession_id,accession_dir,verbose=TRUE) {
 
     # delete original file
     if (verbose) {
-        message("Deleting original fastq file...")}
+        message("Deleting original FASTQ file...")}
     system(paste("rm",uncleaned_fastq_file))
     
     return(cleaned_fastq_file)
@@ -169,7 +169,8 @@ kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
         
         # Progress indicator
         if (chunk_num %% 10 == 0 && verbose) {
-            message("Processed ", chunk_num * chunk_size,
+            message("Processed ", format(chunk_num * chunk_size,
+                                         scientific=FALSE),
                     " sequences")}
         
         rm(seq_chunk, dna_chunk, chunk_counts)
@@ -226,7 +227,7 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
     # -------------------- Sampling ---------------------
     
     if (verbose) {
-        message("Sampling ", format(sample_size, scientific = TRUE),
+        message("Sampling ", format(sample_size, scientific = FALSE),
                 " sequences... ")}
     
     sampled_fastq_file <- tryCatch(
@@ -255,5 +256,54 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
     return(kmer_results$kmer_freq)
 }
 
-load_and_kmerize(test_id,data_dir)
+system.time(load_and_kmerize(test_id,data_dir))
+#    user  system  elapsed 
+# 481.727  64.875  352.151 
+
+
+# -------------------- Handling List of IDs ---------------------
+
+id_path <- "../breastcancer_kmers/data/abc_ids.txt"
+
+kmerize_id_list <- function(id_path, verbose = TRUE,
+                            sample_size = 1e6, k = 2,
+                            chunk_size = 50000, sums = FALSE) {
+    # PARAMS: id_path <- file path of deliminated id list 
+    # OUTPUT: results_df of kmer_freqs across each id in id_path file
+    ids <- read.delim(id_path, header = FALSE)
+    
+    # create results df
+    kmers <- oligonucleotideFrequency(
+        DNAString("ACGT"),
+        width = k
+    ) |> names() # get row names (ids)
+    # Initialize empty results dataframe
+    results_df <- data.frame(
+        matrix(
+            nrow = 0,
+            ncol = length(kmers),
+            dimnames = list(NULL, kmers)
+        ),
+        check.names = FALSE)
+    
+    for (id in ids) {
+        data_dir <- file.path(dirname(id_path),"prefetched")
+        
+        kmer_freq <- load_and_kmerize(id, data_dir, verbose, 
+                                      sample_size, k, chunk_size, sums)
+        class <- path_ext_remove(basename(id_path))[1:4] # target var.
+        
+        if (!is.null(kmer_freq)) {
+            results_df[test_id, ] <- c(kmer_freq,class)}
+    }
+    return(results_df)
+}
+
+
+
+
+
+
+
+
 
