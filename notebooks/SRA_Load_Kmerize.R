@@ -9,7 +9,6 @@
 
 library(data.table)
 library(Biostrings)
-
 # ---------------------- Modularize -----------------------
 
 test_id <- read.delim("../breastcancer_kmers/data/abc_ids.txt",
@@ -103,23 +102,78 @@ sample_SRA <- function(accession_id,
     ##RETURNS:
     # sampled_fastq_file = (character) path of sampled .txt lines from SRA
     
-    # random sampling of sequence-lines
-    sampled_fastq_file <- file.path(accession_dir,
-                                    paste0(accession_id,"_sample",
-                                           gsub("\\+0", "", 
-                                                format(sample_size, 
-                                                       scientific = TRUE)),
-                                           ".txt"))
+    # Output file
+    sampled_fastq_file <- file.path(
+        accession_dir,
+        paste0(accession_id, "_sample",
+               as.character(sample_size),
+               ".txt")
+    )
     
-    lines <- fread(cleaned_fastq_file, header = FALSE)[[1]] 
-    sampled_lines <- sample(lines,sample_size) 
-    rm(lines) 
+    # Temporary files
+    index_file <- tempfile()
+    sorted_index_file <- tempfile()
     
-    writeLines(sampled_lines, sampled_fastq_file)
+    # Count total sequences without loading them into R
+    line_count <- system2(
+        "wc",
+        args = c("-l", shQuote(cleaned_fastq_file)),
+        stdout = TRUE)
+    
+    total_lines <- as.numeric(
+        strsplit(trimws(line_count[1]), "\\s+")[[1]][1])
+    
+    # Validate sample size
+    if (sample_size > total_lines) {
+        stop("Sample size exceeds number of available sequences.")}
+    
+    # Randomly select line numbers
+    status <- system2(
+        "gshuf",
+        args = c(
+            "-i", paste0("1-", total_lines),
+            "-n", as.character(as.integer(sample_size))),
+        stdout = index_file
+    )
+    
+    if (status != 0) stop("Random sampling failed.")
+    
+    # Sort selected line numbers
+    status <- system2(
+        "sort",
+        args = c("-n", index_file),
+        stdout = sorted_index_file
+    )
+    
+    if (status != 0) stop("Sorting sampled indices failed.")
+    
+    # Extract only selected sequences
+    awk_script <- paste(
+        'BEGIN { i=1 }',
+        'NR==FNR { selected[++n]=$1; next }',
+        'n > 0 && FNR == selected[i] { print; i++ }',
+        sep = " "
+    )
+    
+    status <- system2(
+        "awk",
+        args = c(
+            shQuote(awk_script),
+            shQuote(sorted_index_file),
+            shQuote(cleaned_fastq_file)
+        ),
+        stdout = sampled_fastq_file
+    )
+    
+    # Cleanup
+    unlink(c(index_file, sorted_index_file))
+    
+    if (status != 0) {
+        stop("Sequence extraction failed.")}
     
     return(sampled_fastq_file)
 }
-
+    
 
 kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
                         verbose = TRUE) {
@@ -256,9 +310,19 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
     return(kmer_results$kmer_freq)
 }
 
-system.time(load_and_kmerize(test_id,data_dir))
+#system.time(load_and_kmerize(test_id,data_dir))
 #    user  system  elapsed 
-# 481.727  64.875  352.151 
+# 481.727  64.875  352.151 (old)
+# 350.685  33.849  337.301 (new)
+
+
+
+
+
+
+
+
+
 
 
 # --------------------- Handling List of IDs ---------------------
@@ -268,13 +332,13 @@ id_path <- "../breastcancer_kmers/data/abc_ids.txt"
 kmerize_id_list <- function(id_path, verbose = TRUE,
                             sample_size = 1e6, k = 2,
                             chunk_size = 50000, sums = FALSE) {
-    # PARAMS: id_path <- file path of deliminated id list 
+    # PARAMS: id_path <- file path of deliminated id list, label = class
     # OUTPUT: results_df of kmer_freqs across each id in id_path file
     ids <- read.delim(id_path, header = FALSE)[[1]]
     # target var. label
-    class_label <- strsplit(
-        tools::file_path_sans_ext(basename(id_path)),
-        "_")[[1]][1]
+    #class_label <- strsplit(
+    #    tools::file_path_sans_ext(basename(id_path)),
+    #    "_")[[1]][1]
     
     # create results df
     kmers <- oligonucleotideFrequency(
@@ -289,8 +353,8 @@ kmerize_id_list <- function(id_path, verbose = TRUE,
             ncol = length(kmers),
             dimnames = list(NULL, kmers)
         ),
-        class = factor(character(0)),
-        check.names = FALSE)
+        #class = label,#factor(character(0), levels = c("ABC", "ABCA")),
+        check.names = FALSE)    
     
     for (id in ids) {
         data_dir <- file.path(dirname(id_path),"prefetched")
@@ -300,15 +364,16 @@ kmerize_id_list <- function(id_path, verbose = TRUE,
         
         if (!is.null(kmer_freq)) {
             results_df[id, kmers] <- as.list(kmer_freq)
-            results_df[id, "class"] <- class_label }
+            #results_df[id, "class"] <- class_label 
+            }
                     }
     return(results_df)
 }
 
 
-system.time(kmerize_id_list(id_path))
+#kmerize_id_list(id_path)
 
 
-
-
+abca_kmers <- kmerize_id_list("../breastcancer_kmers/data/abca_ids.txt")
+abca_kmers
 
