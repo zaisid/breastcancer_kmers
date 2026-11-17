@@ -57,7 +57,7 @@ load_SRA <- function(sra_id,data_dir,verbose=TRUE) {
     
     cat("File",accession_id,"downloaded")
     
-    return(accession_id,accession_dir)
+    return(c(accession_id,accession_dir))
 }
 
 
@@ -179,16 +179,33 @@ kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
     # Normalize into frequencies 
     kmer_freq <- kmer_sums / sum(kmer_sums)
     
-    return(kmer_freq,kmer_sums)
+    return(c(kmer_freq,kmer_sums))
 }
 
 
+load_and_kmerize <- function(sra_id,data_dir,verbose=TRUE,
+                             sample_size=1e6,k=2,chunk_size=50000,
+                             sums=FALSE) {
+    # full pipeline, from SRA ID to kmer vector
+    # outputs kmer_freq vector (also kmer_sums if sum is set to TRUE; default FALSE)
+    
+    if (verbose) {
+        message("Downloading file:",sra_id)
+    }
+    accessions <- load_SRA(sra_id,data_dir,verbose)
+    accession_id  <- accessions[[1]]
+    accession_dir <- accessions[[2]]
+    
+    
+    cleaned_fastq_file <- clean_SRA(accession_id,accession_dir,verbose)
+    sampled_fastq_file <- sample_SRA(accession_id,accession_dir,
+                                     cleaned_fastq_file,sample_size)
+    
+    if (sums) {
+        return(kmerize_SRA(sampled_fastq_file,k,chunk_size,verbose))}
+    return(kmerize_SRA(sampled_fastq_file,k,chunk_size,verbose)[[1]])
+}
 
 
-
-
-
-
-
-
+load_and_kmerize(test_id,data_dir)
 
