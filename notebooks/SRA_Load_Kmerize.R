@@ -255,41 +255,69 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
         return(NULL)
     }
     
-    # -------------------- Downloading ---------------------
+    # -------------------- Check for existing sample ---------------------
     
-    if (verbose) {
-        message("Downloading file: ", sra_id)}
+    # same path construction as in sample_SRA()
+    existing_sample_file <- file.path(
+        data_dir, sra_id,
+        paste0(sra_id, "_sample", as.character(sample_size), ".txt"))
     
-    accession_dir <- tryCatch(
-        load_SRA(sra_id, data_dir, verbose),
-        error = function(e) handle_error("SRA download", e))
+    sample_exists <- FALSE
+    if (file.exists(existing_sample_file)) {
+        line_count <- system2(
+            "wc",
+            args = c("-l", shQuote(existing_sample_file)),
+            stdout = TRUE)
+        n_lines <- as.numeric(
+            strsplit(trimws(line_count[1]), "\\s+")[[1]][1])
+        sample_exists <- (n_lines == sample_size)
+    }
     
-    if (is.null(accession_dir)) return(NULL)
-    
-    # -------------------- Cleaning ---------------------
-    
-    if (verbose) {
-        message("Cleaning FASTQ data...")}
-    
-    cleaned_fastq_file <- tryCatch(
-        clean_SRA(sra_id, accession_dir, verbose),
-        error = function(e) handle_error("SRA cleaning", e)
-    )
-    
-    if (is.null(cleaned_fastq_file)) return(NULL)
-    
-    # -------------------- Sampling ---------------------
-    
-    if (verbose) {
-        message("Sampling ", format(sample_size, scientific = FALSE),
-                " sequences... ")}
-    
-    sampled_fastq_file <- tryCatch(
-        sample_SRA(sra_id, accession_dir,
-                   cleaned_fastq_file, sample_size),
-        error = function(e) handle_error("SRA sampling", e))
-    
-    if (is.null(sampled_fastq_file)) return(NULL)
+    if (sample_exists) {
+        
+        if (verbose) {
+            message("Sample file already present for ", sra_id,
+                    "; skipping to k-merizing...")}
+        sampled_fastq_file <- existing_sample_file
+        
+    } else {
+        
+        # -------------------- Downloading ---------------------
+        
+        if (verbose) {
+            message("Downloading file: ", sra_id)}
+        
+        accession_dir <- tryCatch(
+            load_SRA(sra_id, data_dir, verbose),
+            error = function(e) handle_error("SRA download", e))
+        
+        if (is.null(accession_dir)) return(NULL)
+        
+        # -------------------- Cleaning ---------------------
+        
+        if (verbose) {
+            message("Cleaning FASTQ data...")}
+        
+        cleaned_fastq_file <- tryCatch(
+            clean_SRA(sra_id, accession_dir, verbose),
+            error = function(e) handle_error("SRA cleaning", e)
+        )
+        
+        if (is.null(cleaned_fastq_file)) return(NULL)
+        
+        # -------------------- Sampling ---------------------
+        
+        if (verbose) {
+            message("Sampling ", format(sample_size, scientific = FALSE),
+                    " sequences... ")}
+        
+        sampled_fastq_file <- tryCatch(
+            sample_SRA(sra_id, accession_dir,
+                       cleaned_fastq_file, sample_size),
+            error = function(e) handle_error("SRA sampling", e))
+        
+        if (is.null(sampled_fastq_file)) return(NULL)
+    }
     
     # -------------------- K-merizing ---------------------
     
@@ -317,28 +345,17 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
 
 
 
-
-
-
-
-
-
-
-
 # --------------------- Handling List of IDs ---------------------
 
 id_path <- "../breastcancer_kmers/data/abc_ids.txt"
 
-kmerize_id_list <- function(id_path, verbose = TRUE,
+kmerize_id_list <- function(id_path, class_label, verbose = TRUE,
                             sample_size = 1e6, k = 2,
                             chunk_size = 50000, sums = FALSE) {
-    # PARAMS: id_path <- file path of deliminated id list, label = class
+    # PARAMS: id_path <- file path of deliminated id list
+    #         class_label <- (character) class assigned to every id in this list
     # OUTPUT: results_df of kmer_freqs across each id in id_path file
     ids <- read.delim(id_path, header = FALSE)[[1]]
-    # target var. label
-    #class_label <- strsplit(
-    #    tools::file_path_sans_ext(basename(id_path)),
-    #    "_")[[1]][1]
     
     # create results df
     kmers <- oligonucleotideFrequency(
@@ -353,7 +370,7 @@ kmerize_id_list <- function(id_path, verbose = TRUE,
             ncol = length(kmers),
             dimnames = list(NULL, kmers)
         ),
-        #class = label,#factor(character(0), levels = c("ABC", "ABCA")),
+        class = character(0),
         check.names = FALSE)    
     
     for (id in ids) {
@@ -364,16 +381,21 @@ kmerize_id_list <- function(id_path, verbose = TRUE,
         
         if (!is.null(kmer_freq)) {
             results_df[id, kmers] <- as.list(kmer_freq)
-            #results_df[id, "class"] <- class_label 
-            }
-                    }
+            results_df[id, "class"] <- class_label}
+    }
     return(results_df)
 }
 
 
-#kmerize_id_list(id_path)
+abc_kmers <- kmerize_id_list(id_path,"ABC")
+abc_kmers
 
-
-abca_kmers <- kmerize_id_list("../breastcancer_kmers/data/abca_ids.txt")
+abca_kmers <- kmerize_id_list("../breastcancer_kmers/data/abca_ids.txt","ABCA")
 abca_kmers
+
+# save as .csv
+k2_s1e6_freqs <- rbind(abc_kmers,abca_kmers)
+write.csv(k2_s1e6_freqs, 
+          "../breastcancer_kmers/data/k2_s1e6_freqs.csv", 
+          row.names = TRUE)
 
