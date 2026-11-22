@@ -387,15 +387,15 @@ kmerize_id_list <- function(id_path, class_label, verbose = TRUE,
 }
 
 
-abc_kmers <- kmerize_id_list(id_path,"ABC")
-abc_kmers
+#abc_kmers <- kmerize_id_list(id_path,"ABC")
+#abc_kmers
 
-abca_kmers <- kmerize_id_list("../breastcancer_kmers/data/abca_ids.txt","ABCA")
-abca_kmers
+#abca_kmers <- kmerize_id_list("../breastcancer_kmers/data/abca_ids.txt","ABCA")
+#abca_kmers
 
 # save as .csv
-k2_s1e6_freqs <- rbind(abc_kmers,abca_kmers)
-write.csv(k2_s1e6_freqs, 
-          "../breastcancer_kmers/data/k2_s1e6_freqs.csv", 
-          row.names = TRUE)
+#k2_s1e6_freqs <- rbind(abc_kmers,abca_kmers)
+#write.csv(k2_s1e6_freqs, 
+#          "../breastcancer_kmers/data/k2_s1e6_freqs.csv", 
+#          row.names = TRUE)
 
