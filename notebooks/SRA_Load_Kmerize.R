@@ -198,6 +198,7 @@ kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
     
     # Open sampled sequence file
     con <- file(sampled_fastq_file, open = "r")
+    on.exit(close(con))
     chunk_num <- 0
     
     repeat {
@@ -242,11 +243,13 @@ kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
 
 
 
+
 load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
                              sample_size = 1e6, k = 2,
-                             chunk_size = 50000, sums = FALSE) {
+                             chunk_size = 50000, sums = FALSE,
+                             resample = FALSE) {
     # full pipeline, from SRA ID to kmer vector
-    # outputs kmer_freq vector (also kmer_sums if sum is set to TRUE; default FALSE)
+    # outputs kmer_freq vector (also kmer_sums if sum is set to TRUE)
     
     # Helper for consistent error handling
     handle_error <- function(stage, error) {
@@ -255,61 +258,93 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
         return(NULL)
     }
     
-    # -------------------- Check for existing sample ---------------------
+    # -------------------- Check for existing files ---------------------
     
-    # same path construction as in sample_SRA()
+    accession_dir <- file.path(data_dir, sra_id)
+    
+    cleaned_fastq_file <- file.path(
+        accession_dir,
+        paste0(sra_id, "_seqonly.txt"))
+    
     existing_sample_file <- file.path(
-        data_dir, sra_id,
+        accession_dir,
         paste0(sra_id, "_sample", as.character(sample_size), ".txt"))
     
+    # Check whether a sample file already exists with the correct size
     sample_exists <- FALSE
+    
     if (file.exists(existing_sample_file)) {
         line_count <- system2(
             "wc",
             args = c("-l", shQuote(existing_sample_file)),
             stdout = TRUE)
+        
         n_lines <- as.numeric(
             strsplit(trimws(line_count[1]), "\\s+")[[1]][1])
+        
         sample_exists <- (n_lines == sample_size)
     }
     
-    if (sample_exists) {
+    # Reuse existing sample if size matches and resampling is not requested
+    if (sample_exists && !resample) {
         
         if (verbose) {
             message("Sample file already present for ", sra_id,
-                    "; skipping to k-merizing...")}
+                    "; skipping to k-merizing...")
+        }
+        
         sampled_fastq_file <- existing_sample_file
         
     } else {
         
-        # -------------------- Downloading ---------------------
+        # -------------------- Check / Download SRA ---------------------
         
-        if (verbose) {
-            message("Downloading file: ", sra_id)}
-        
-        accession_dir <- tryCatch(
-            load_SRA(sra_id, data_dir, verbose),
-            error = function(e) handle_error("SRA download", e))
-        
-        if (is.null(accession_dir)) return(NULL)
-        
-        # -------------------- Cleaning ---------------------
-        
-        if (verbose) {
-            message("Cleaning FASTQ data...")}
-        
-        cleaned_fastq_file <- tryCatch(
-            clean_SRA(sra_id, accession_dir, verbose),
-            error = function(e) handle_error("SRA cleaning", e)
-        )
-        
-        if (is.null(cleaned_fastq_file)) return(NULL)
+        # Only download if the cleaned FASTQ file is missing
+        if (!file.exists(cleaned_fastq_file)) {
+            
+            if (verbose) {
+                message("Cleaned FASTQ file not found. Downloading: ",
+                        sra_id)
+            }
+            
+            accession_dir <- tryCatch(
+                load_SRA(sra_id, data_dir, verbose),
+                error = function(e) handle_error("SRA download", e))
+            
+            if (is.null(accession_dir)) return(NULL)
+            
+            # -------------------- Cleaning ---------------------
+            
+            if (verbose) {
+                message("Cleaning FASTQ data...")
+            }
+            
+            cleaned_fastq_file <- tryCatch(
+                clean_SRA(sra_id, accession_dir, verbose),
+                error = function(e) handle_error("SRA cleaning", e)
+            )
+            
+            if (is.null(cleaned_fastq_file)) return(NULL)
+            
+        } else {
+            
+            if (verbose) {
+                message("Cleaned FASTQ file already present for ",
+                        sra_id, "; skipping download and cleaning...")
+            }
+        }
         
         # -------------------- Sampling ---------------------
         
         if (verbose) {
-            message("Sampling ", format(sample_size, scientific = FALSE),
-                    " sequences... ")}
+            if (resample && sample_exists) {
+                message("Resampling ", sra_id, " with a new random sample...")
+            } else {
+                message("Sampling ", format(sample_size,
+                                            scientific = FALSE),
+                        " sequences...")
+            }
+        }
         
         sampled_fastq_file <- tryCatch(
             sample_SRA(sra_id, accession_dir,
@@ -322,7 +357,8 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
     # -------------------- K-merizing ---------------------
     
     if (verbose) {
-        message("K-merizing...")}
+        message("K-merizing...")
+    }
     
     kmer_results <- tryCatch(
         kmerize_SRA(sampled_fastq_file, k, chunk_size, verbose),
@@ -333,7 +369,8 @@ load_and_kmerize <- function(sra_id, data_dir, verbose = TRUE,
     # -------------------- Output ---------------------
     
     if (sums) {
-        return(kmer_results)}
+        return(kmer_results)
+    }
     
     return(kmer_results$kmer_freq)
 }
@@ -351,7 +388,8 @@ id_path <- "../breastcancer_kmers/data/abc_ids.txt"
 
 kmerize_id_list <- function(id_path, class_label, verbose = TRUE,
                             sample_size = 1e6, k = 2,
-                            chunk_size = 50000, sums = FALSE) {
+                            chunk_size = 50000, resample = FALSE,
+                            sums = FALSE) {
     # PARAMS: id_path <- file path of deliminated id list
     #         class_label <- (character) class assigned to every id in this list
     # OUTPUT: results_df of kmer_freqs across each id in id_path file
@@ -377,7 +415,8 @@ kmerize_id_list <- function(id_path, class_label, verbose = TRUE,
         data_dir <- file.path(dirname(id_path),"prefetched")
         
         kmer_freq <- load_and_kmerize(id, data_dir, verbose, 
-                                      sample_size, k, chunk_size, sums)
+                                      sample_size, k, chunk_size, sums,
+                                      resample)
         
         if (!is.null(kmer_freq)) {
             results_df[id, kmers] <- as.list(kmer_freq)
