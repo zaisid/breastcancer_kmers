@@ -230,7 +230,7 @@ kmerize_SRA <- function(sampled_fastq_file,k=2,chunk_size=50000,
         
         rm(seq_chunk, dna_chunk, chunk_counts)
     }
-    close(con)
+    #close(con)
     
     # Normalize into frequencies 
     kmer_freq <- kmer_sums / sum(kmer_sums)
