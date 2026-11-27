@@ -27,11 +27,13 @@ glimpse(df_k2)
 ```
 
 *Check dimensions*
+
 ```{r}
 cat("3-mer dataset: ",dim(df_k3),"\n4-mer dataset: ",dim(df_k4))
 ```
 
 Create binary var. for cancer vs non-cancer
+
 ```{r}
 k2 <- copy(df_k2)
 k3 <- copy(df_k3)
@@ -42,15 +44,6 @@ k4 <- copy(df_k4)
 k2["cancer"] <- as.factor(c(rep(1,6),rep(0,6),rep(1,6),rep(0,6)))
 k3["cancer"] <- as.factor(c(rep(1,6),rep(0,6),rep(1,6),rep(0,6)))
 k4["cancer"] <- as.factor(c(rep(1,6),rep(0,6),rep(1,6),rep(0,6)))
-```
-
-
-```{r}
-# ABC + ABCA pairs (assumed)
-pairs <- c("SRR41124801" = 1, "SRR41124800" = 2, "SRR41124798" = 3,
-           "SRR41124794" = 1, "SRR41124793" = 2, "SRR41124792" = 3,
-           "SRR41124797" = 4, "SRR41124796" = 5, "SRR41124795" = 6,
-           "SRR41124791" = 4, "SRR41124790" = 5, "SRR41124789" = 6)
 ```
 
 
@@ -103,7 +96,6 @@ sort(abs(k2_pca$rotation[,1]),decreasing=TRUE)
 
 Driven mostly by `TT`, `AA`, `GG`
 
-
 ```{r}
 # k=3 main PCs
 for (x in 1:4) {
@@ -113,7 +105,6 @@ for (x in 1:4) {
 ```
 
 Again, `TTT` is most significant
-
 
 ```{r}
 # k=4 main PCs
@@ -175,7 +166,7 @@ pca_list <- list(
 
 # Explicit class-to-color mapping
 class_colors <- c(
-  EBC = "blue",
+  EBC = "purple",
   BBT = "red",
   ABCA = "darkgreen",
   ABC = "orange"
@@ -206,6 +197,6 @@ for (k in names(pca_list)) {
 par(mfrow = c(1, 1))
 ```
 
-k3 & k4 distributions seems largely similar
-
+- k3 & k4 distributions seems largely similar; k2 looks horizontally reflected
+- `BBT` looks relatively discernible
 
