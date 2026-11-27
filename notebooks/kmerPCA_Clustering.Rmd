@@ -1,0 +1,211 @@
+---
+title: "PCA + LogReg on K-mer Datasets"
+author: "Zainab Siddiqui"
+date: "2026-11-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##### imports
+
+```{r}
+library(data.table)
+library(dplyr)
+```
+
+### Data Loading
+
+```{r}
+data_dir <- "../data/kmer_datasets"
+df_k2 <- read.csv(file.path(data_dir,"k2_s2e6_c4_freqs.csv"))
+df_k3 <- read.csv(file.path(data_dir,"k3_s2e6_c4_freqs.csv"))
+df_k4 <- read.csv(file.path(data_dir,"k4_s2e6_c4_freqs.csv"))
+glimpse(df_k2)
+```
+
+*Check dimensions*
+```{r}
+cat("3-mer dataset: ",dim(df_k3),"\n4-mer dataset: ",dim(df_k4))
+```
+
+Create binary var. for cancer vs non-cancer
+```{r}
+k2 <- copy(df_k2)
+k3 <- copy(df_k3)
+k4 <- copy(df_k4)
+
+# ABC  & EBC --> 1 (cancerous)
+# ABCA & BBT --> 0 (non-cancerous)
+k2["cancer"] <- as.factor(c(rep(1,6),rep(0,6),rep(1,6),rep(0,6)))
+k3["cancer"] <- as.factor(c(rep(1,6),rep(0,6),rep(1,6),rep(0,6)))
+k4["cancer"] <- as.factor(c(rep(1,6),rep(0,6),rep(1,6),rep(0,6)))
+```
+
+
+```{r}
+# ABC + ABCA pairs (assumed)
+pairs <- c("SRR41124801" = 1, "SRR41124800" = 2, "SRR41124798" = 3,
+           "SRR41124794" = 1, "SRR41124793" = 2, "SRR41124792" = 3,
+           "SRR41124797" = 4, "SRR41124796" = 5, "SRR41124795" = 6,
+           "SRR41124791" = 4, "SRR41124790" = 5, "SRR41124789" = 6)
+```
+
+
+## PCA
+
+```{r}
+k2_pca <- prcomp(k2[, -c(1, (ncol(k2) - 1):ncol(k2))])
+k3_pca <- prcomp(k3[, -c(1, (ncol(k3) - 1):ncol(k3))])
+k4_pca <- prcomp(k4[, -c(1, (ncol(k4) - 1):ncol(k4))])
+```
+
+### Scree Plot
+
+```{r, fig.width=8, fig.height=8}
+pca_list <- list(
+  k2 = k2_pca,
+  k3 = k3_pca,
+  k4 = k4_pca
+)
+
+# Set up 2x2 plotting grid
+par(mfrow = c(2, 2))
+
+for (k in names(pca_list)) {
+  pca <- pca_list[[k]]
+
+  var_explained <- pca$sdev^2 / sum(pca$sdev^2) * 100
+  cumulative_var <- cumsum(var_explained)
+
+  plot(cumulative_var,
+       xlab = "Principal Component",
+       type = "b",
+       pch = 19,
+       ylim = c(60, 100),
+       ylab = "Cumulative Variance Explained (%)",
+       main = paste("Cumulative Scree Plot", k))
+
+  abline(h = 90, lty = 2, col = "red")
+}
+
+# Reset plotting layout
+par(mfrow = c(1, 1))
+```
+
+*Investigate k=2 PC1*
+
+```{r}
+sort(abs(k2_pca$rotation[,1]),decreasing=TRUE)
+```
+
+Driven mostly by `TT`, `AA`, `GG`
+
+
+```{r}
+# k=3 main PCs
+for (x in 1:4) {
+  cat("PC", x, ":\n")
+  print(sort(abs(k3_pca$rotation[, x]), decreasing = TRUE)[1:8])
+}
+```
+
+Again, `TTT` is most significant
+
+
+```{r}
+# k=4 main PCs
+for (x in 1:4) {
+  cat("PC", x, ":\n")
+  print(sort(abs(k4_pca$rotation[, x]), decreasing = TRUE)[1:8])
+}
+```
+
+Thymine- and adenine-rich k-mers are of top significance
+
+## Clustering
+
+```{r, fig.width=8, fig.height=8}
+pca_list <- list(
+  k2 = k2_pca,
+  k3 = k3_pca,
+  k4 = k4_pca
+)
+
+# Explicit class-to-color mapping
+class_colors <- c(
+  "0" = "blue",
+  "1" = "red"
+)
+
+# Generate colors using the binary class variable
+cmap <- class_colors[as.character(k2$cancer)]
+
+par(mfrow = c(2, 2))
+
+for (k in names(pca_list)) {
+  pca <- pca_list[[k]]
+
+  plot(pca$x[, 1:2],
+       xlab = "PC1",
+       ylab = "PC2",
+       main = paste("PC1 vs. PC2 -", k),
+       pch = 19,
+       col = cmap)
+
+  legend("topright",
+         legend = c("0 = Non-cancerous", "1 = Cancerous"),
+         col = c("blue", "red"),
+         pch = 19)
+}
+
+par(mfrow = c(1, 1))
+```
+
+*Check 4-class dist.*
+
+```{r, fig.width=8, fig.height=8}
+pca_list <- list(
+  k2 = k2_pca,
+  k3 = k3_pca,
+  k4 = k4_pca
+)
+
+# Explicit class-to-color mapping
+class_colors <- c(
+  EBC = "blue",
+  BBT = "red",
+  ABCA = "darkgreen",
+  ABC = "orange"
+)
+
+# Match colors to sample classes
+cmap <- class_colors[as.character(k2$class)]
+
+par(mfrow = c(2, 2))
+
+for (k in names(pca_list)) {
+  pca <- pca_list[[k]]
+
+  plot(pca$x[, 1:2],
+       xlab = "PC1",
+       ylab = "PC2",
+       main = paste("PC1 vs. PC2 -", k),
+       pch = 19,
+       col = cmap)
+
+  legend("topright",
+         legend = names(class_colors),
+         col = class_colors,
+         pch = 19,
+         cex = 0.8)
+}
+
+par(mfrow = c(1, 1))
+```
+
+k3 & k4 distributions seems largely similar
+
+
