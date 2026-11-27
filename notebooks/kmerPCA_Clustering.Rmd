@@ -1,5 +1,5 @@
 ---
-title: "PCA + LogReg on K-mer Datasets"
+title: "PCA + Clustering on K-mer Datasets"
 author: "Zainab Siddiqui"
 date: "2026-11-26"
 output: pdf_document
